@@ -1,1 +1,1 @@
-# shopify-scripts
+# shopify-extensions
