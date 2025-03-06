@@ -1,10 +1,13 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "4bf928089d8a75760c86d45b5272976f"
+client_id = ""
 application_url = "https://shopify.dev/apps/default-app-home"
 embedded = true
-name = "practice-gift-wrapper"
-handle = "practice-gift-wrapper"
+name = "hotwax-gift-wrapper"
+handle = "hotwax-gift-wrapper"
+
+# name = "practice-gift-wrapper"
+# handle = "practice-gift-wrapper"
 
 [webhooks]
 api_version = "2025-01"

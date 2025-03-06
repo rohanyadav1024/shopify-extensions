@@ -22,20 +22,18 @@ function App() {
   const [items, setItems] = useState([]);
   const [selectedItemIds, setSelectedItemIds] = useState(["none"]);
   const [loading, setLoading] = useState(true);
-  const [giftWrapOption, setGiftWrapOption] = useState(
-    "Gift Wrap Items Together"
-  );
-  const [giftWrapForWrappingTogether, setGiftWrapForWrappingTogether] =
-    useState("Holiday");
+  const [giftWrapOption, setGiftWrapOption] = useState("Gift Wrap Items Together");
+  const [giftWrapForWrappingTogether, setGiftWrapForWrappingTogether] = useState("With Love");
   const [giftNote, setGiftNote] = useState("");
-  const [draftOrderCustomAttributes, setDraftOrderCustomAttributes] = useState(
-    []
-  );
+  const [draftOrderCustomAttributes, setDraftOrderCustomAttributes] = useState([]);
 
-  const giftWrappers = [
+  const giftWrapOptions = [
+    { value: "Gift Wrap Items Together", label: "Together" },
+    { value: "Gift Wrap Items Separately", label: "Separate" }];
+
+  const wrapperOptions = [
     { value: "Holiday", label: "Holiday" },
-    { value: "With Love", label: "With Love" },
-  ];
+    { value: "With Love", label: "With Love" }];
 
   const draftOrderId = data?.selected[0]?.id;
 
@@ -82,36 +80,26 @@ function App() {
         if (draftOrder) {
           setGiftNote(draftOrder.note2 || "");
           setGiftWrapOption(
-            draftOrder.customAttributes?.find(
-              (attr) => attr.key === "Gift Wrap Option"
-            )?.value || "Gift Wrap Items Together"
-          );
+            draftOrder.customAttributes?.find((attr) => attr.key === "Gift Wrap Option")?.value || "Gift Wrap Items Together");
+          
           setGiftWrapForWrappingTogether(
-            draftOrder.customAttributes?.find(
-              (attr) => attr.key === "Gift Wrap"
-            )?.value || "Holiday"
-          );
+            draftOrder.customAttributes?.find((attr) => attr.key === "Gift Wrap")?.value || "With Love");
 
           setDraftOrderCustomAttributes(draftOrder.customAttributes || []);
 
           const lineItems = draftOrder.lineItems.edges.map(({ node }) => {
-            const giftWrapAttr = node.customAttributes?.find(
-              (attr) => attr.key === "Gift Wrap"
-            );
+            const giftWrapAttr = node.customAttributes?.find((attr) => attr.key === "Gift Wrap");
             return {
               id: node.id,
               name: node.name || node.title,
               selected: !!giftWrapAttr,
               variantId: node.variant?.id,
               quantity: node.quantity,
-              wrapOption: giftWrapAttr?.value || "Holiday",
-              customAttributes: node.customAttributes || [],
-            };
+              wrapOption: giftWrapAttr?.value || "With Love",
+              customAttributes: node.customAttributes || []};
           });
 
-          const selectedIds = lineItems
-            .filter((item) => item.selected)
-            .map((item) => item.id.toString());
+          const selectedIds = lineItems.filter((item) => item.selected).map((item) => item.id.toString());
 
           setItems(lineItems);
           setSelectedItemIds(selectedIds);
@@ -122,44 +110,21 @@ function App() {
     }
   }
 
-  const updateDraftOrderAttributes = (
-    existingAttributes,
-    key,
-    value,
-    action
-  ) => {
-    const filteredAttributes = existingAttributes.filter(
-      (attr) => attr.key !== key
-    );
+  const updateDraftOrderAttributes = (existingAttributes, key, value, action) => {
+    const filteredAttributes = existingAttributes.filter((attr) => attr.key !== key);
 
-    return action === "add"
-      ? [...filteredAttributes, { key, value }]
-      : filteredAttributes; // No addition on remove
+    return action === "add" ? [...filteredAttributes, { key, value }] : filteredAttributes; // No addition on remove
   };
 
-  const updateCustomAttributes = (
-    attributes = [],
-    isSelected,
-    wrapOption,
-    action
-  ) => {
-    const filteredAttributes = attributes.filter(
-      (attr) => attr.key !== "Gift Wrap"
-    );
+  const updateCustomAttributes = (attributes = [], isSelected, wrapOption, action) => {
+    const filteredAttributes = attributes.filter((attr) => attr.key !== "Gift Wrap");
 
     return isSelected && action === "add"
       ? [...filteredAttributes, { key: "Gift Wrap", value: wrapOption }]
       : filteredAttributes; // Preserve others even when removing gift wrap
   };
 
-  async function updateDraftOrder(
-    draftOrderId,
-    lineItems,
-    giftNote,
-    giftWrapOption,
-    draftOrderCustomAttributes,
-    action
-  ) {
+  async function updateDraftOrder(draftOrderId, lineItems, giftWrapOption, draftOrderCustomAttributes, action) {
     const MUTATION = `
       mutation updateDraftOrder($input: DraftOrderInput!, $ownerId: ID!) {
         draftOrderUpdate(input: $input, id: $ownerId) {
@@ -171,30 +136,12 @@ function App() {
 
     const input = {
       note: action === "add" ? giftNote : null,
-      customAttributes: updateDraftOrderAttributes(
-        draftOrderCustomAttributes, // Pass fetched attributes here
-        "Gift Wrap Option",
-        giftWrapOption,
-        action
-      ),
-      lineItems: lineItems.map(
-        ({
-          id,
-          quantity,
-          variantId,
-          selected,
-          wrapOption,
-          customAttributes,
-        }) => ({
+      customAttributes: updateDraftOrderAttributes(draftOrderCustomAttributes,"Gift Wrap Option",giftWrapOption,action),  // Pass fetched attributes here
+      lineItems: lineItems.map(({ id, quantity, variantId, selected, wrapOption, customAttributes}) => ({
           uuid: id,
           variantId,
           quantity,
-          customAttributes: updateCustomAttributes(
-            customAttributes,
-            selected,
-            wrapOption,
-            action
-          ),
+          customAttributes: updateCustomAttributes(customAttributes, selected, wrapOption, action)
         })
       ),
     };
@@ -203,7 +150,7 @@ function App() {
     await fetchDraftOrderItems();
   }
 
-  const handleItemSelection = (selectedIds) => {
+  const itemSelection = (selectedIds) => {
     setSelectedItemIds(selectedIds);
     setItems((prevItems) =>
       prevItems.map((item) => ({
@@ -218,15 +165,12 @@ function App() {
     );
   };
 
-  const handleWrapSelection = (id, option) => {
+  const wrapSelection = (id, option) => {
     setItems((prevItems) =>
-      prevItems.map((item) =>
-        item.id === id ? { ...item, wrapOption: option } : item
-      )
-    );
+      prevItems.map((item) => item.id === id ? { ...item, wrapOption: option } : item));
   };
 
-  const handleGiftWrapForWrappingTogetherChange = (value) => {
+  const giftWrapForWrappingTogetherChange = (value) => {
     setGiftWrapForWrappingTogether(value);
     setItems((prevItems) =>
       prevItems.map((item) => ({
@@ -239,26 +183,13 @@ function App() {
     );
   };
 
-  async function handleAddGiftWrap() {
-    await updateDraftOrder(
-      draftOrderId,
-      items,
-      giftNote,
-      giftWrapOption,
-      draftOrderCustomAttributes, // Pass this state
-      "add"
-    );
+  async function addGiftWrap() {
+    await updateDraftOrder(draftOrderId, items, giftWrapOption, draftOrderCustomAttributes, "add");
   }
 
-  async function handleRemoveGiftWrap() {
-    await updateDraftOrder(
-      draftOrderId,
-      items,
-      "",
-      "",
-      draftOrderCustomAttributes,
-      "remove"
-    );
+  async function removeGiftWrap() {
+    // setGiftNote()
+    await updateDraftOrder(draftOrderId, items, "", draftOrderCustomAttributes, "remove");
   }
 
   return (
@@ -272,23 +203,20 @@ function App() {
           }))}
           multiple="true"
           value={selectedItemIds}
-          onChange={handleItemSelection}
+          onChange={itemSelection}
         />
         <Select
           label="Gift wrap together?"
-          options={[
-            { value: "Gift Wrap Items Together", label: "Together" },
-            { value: "Gift Wrap Items Separately", label: "Separate" },
-          ]}
+          options={giftWrapOptions}
           value={giftWrapOption}
           onChange={setGiftWrapOption}
         />
         {giftWrapOption === "Gift Wrap Items Together" ? (
           <Select
             label="Select gift wrap"
-            options={giftWrappers}
+            options={wrapperOptions}
             value={giftWrapForWrappingTogether}
-            onChange={handleGiftWrapForWrappingTogetherChange}
+            onChange={giftWrapForWrappingTogetherChange}
           />
         ) : (
           <BlockStack>
@@ -299,9 +227,9 @@ function App() {
                   <BlockStack key={item.id} padding="base none">
                     <Select
                       label={item.name}
-                      options={giftWrappers}
+                      options={wrapperOptions}
                       value={item.wrapOption}
-                      onChange={(value) => handleWrapSelection(item.id, value)}
+                      onChange={(value) => wrapSelection(item.id, value)}
                     />
                   </BlockStack>
                 )
@@ -320,10 +248,10 @@ function App() {
           wrapping.
         </Text>
         <InlineStack spacing="tight" columnGap="base" inlineAlignment="end">
-          <Button variant="secondary" onPress={handleRemoveGiftWrap}>
+          <Button variant="secondary" onPress={removeGiftWrap}>
             Remove Gift Wrap
           </Button>
-          <Button variant="primary" onPress={handleAddGiftWrap}>
+          <Button variant="primary" onPress={addGiftWrap}>
             Confirm Gift Wrapping
           </Button>
         </InlineStack>

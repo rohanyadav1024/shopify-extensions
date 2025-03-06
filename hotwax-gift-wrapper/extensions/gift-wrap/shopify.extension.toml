@@ -11,7 +11,6 @@ type = "ui_extension"
 [[extensions.targeting]]
 module = "./src/BlockExtension.jsx"
 # The target used here must match the target used in the module file (./src/BlockExtension.jsx)
-# target = "admin.product-details.block.render"
 target = "admin.draft-order-details.block.render"
 
 
