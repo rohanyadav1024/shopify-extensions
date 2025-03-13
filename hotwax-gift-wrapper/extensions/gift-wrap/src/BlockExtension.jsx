@@ -10,30 +10,40 @@ import {
   ChoiceList,
   TextArea,
 } from "@shopify/ui-extensions-react/admin";
-import { Heading } from "@shopify/ui-extensions/admin";
+import { Banner, Heading } from "@shopify/ui-extensions/admin";
 import { useEffect, useState } from "react";
+import {
+  getDraftOrderItems,
+  updateDraftOrder,
+  removeCustomAtrribute,
+} from "../utils/shopifyUpdateHandler";
 
 const TARGET = "admin.draft-order-details.block.render";
 
 export default reactExtension(TARGET, () => <App />);
 
 function App() {
-  const { data, query } = useApi(TARGET);
+  const { data, query, navigation } = useApi(TARGET);
   const [items, setItems] = useState([]);
-  const [selectedItemIds, setSelectedItemIds] = useState(["none"]);
+  const [selectedItemIds, setSelectedItemIds] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [giftWrapOption, setGiftWrapOption] = useState("Gift Wrap Items Together");
-  const [giftWrapForWrappingTogether, setGiftWrapForWrappingTogether] = useState("With Love");
+  const [giftWrapOption, setGiftWrapOption] = useState(
+    "Gift Wrap Items Together"
+  );
+  const [giftWrapForWrappingTogether, setGiftWrapForWrappingTogether] =
+    useState("With Love");
   const [giftNote, setGiftNote] = useState("");
-  const [draftOrderCustomAttributes, setDraftOrderCustomAttributes] = useState([]);
+  const [updateMessage, setUpdateMessage] = useState("");
 
   const giftWrapOptions = [
     { value: "Gift Wrap Items Together", label: "Together" },
-    { value: "Gift Wrap Items Separately", label: "Separate" }];
+    { value: "Gift Wrap Items Separately", label: "Separate" },
+  ];
 
   const wrapperOptions = [
     { value: "Holiday", label: "Holiday" },
-    { value: "With Love", label: "With Love" }];
+    { value: "With Love", label: "With Love" },
+  ];
 
   const draftOrderId = data?.selected[0]?.id;
 
@@ -43,52 +53,37 @@ function App() {
 
   async function fetchDraftOrderItems() {
     if (draftOrderId) {
-      const QUERY = `
-        query getDraftOrderItems($draftOrderId: ID!) {
-          draftOrder(id: $draftOrderId) {
-            id
-            customAttributes {
-              key
-              value
-            }
-            note2
-            lineItems(first: 10) {
-              edges {
-                node {
-                  id
-                  name
-                  title
-                  quantity
-                  variant {
-                    id
-                  }
-                  customAttributes {
-                    key
-                    value
-                  }
-                }
-              }
-            }
-          }
-        }
-      `;
-
       try {
-        const response = await query(QUERY, { variables: { draftOrderId } });
+        const response = await getDraftOrderItems(draftOrderId);
         const draftOrder = response?.data?.draftOrder;
-
+        
         if (draftOrder) {
-          setGiftNote(draftOrder.note2 || "");
+          setGiftNote(draftOrder.note || "");
           setGiftWrapOption(
-            draftOrder.customAttributes?.find((attr) => attr.key === "Gift Wrap Option")?.value || "Gift Wrap Items Together");
-          
-          setGiftWrapForWrappingTogether(
-            draftOrder.customAttributes?.find((attr) => attr.key === "Gift Wrap")?.value || "With Love");
+            draftOrder.customAttributes?.find(
+              (attr) => attr.key === "Gift Wrap Option"
+            )?.value || "Gift Wrap Items Together"
+          );
 
-          setDraftOrderCustomAttributes(draftOrder.customAttributes || []);
+          if (giftWrapOption === "Gift Wrap Items Together") {
+            const wrapValue =
+              draftOrder.lineItems.edges
+                .find(({ node }) =>
+                  node.customAttributes?.some(
+                    (attr) => attr.key === "Gift Wrap"
+                  )
+                )
+                ?.node?.customAttributes?.find(
+                  (attr) => attr.key === "Gift Wrap"
+                )?.value || "With Love";
+
+            setGiftWrapForWrappingTogether(wrapValue);
+          }
 
           const lineItems = draftOrder.lineItems.edges.map(({ node }) => {
-            const giftWrapAttr = node.customAttributes?.find((attr) => attr.key === "Gift Wrap");
+            const giftWrapAttr = node.customAttributes?.find(
+              (attr) => attr.key === "Gift Wrap"
+            );
             return {
               id: node.id,
               name: node.name || node.title,
@@ -96,10 +91,13 @@ function App() {
               variantId: node.variant?.id,
               quantity: node.quantity,
               wrapOption: giftWrapAttr?.value || "With Love",
-              customAttributes: node.customAttributes || []};
+              customAttributes: node.customAttributes || [],
+            };
           });
 
-          const selectedIds = lineItems.filter((item) => item.selected).map((item) => item.id.toString());
+          const selectedIds = lineItems
+            .filter((item) => item.selected)
+            .map((item) => item.id.toString());
 
           setItems(lineItems);
           setSelectedItemIds(selectedIds);
@@ -110,48 +108,51 @@ function App() {
     }
   }
 
-  const updateDraftOrderAttributes = (existingAttributes, key, value, action) => {
-    const filteredAttributes = existingAttributes.filter((attr) => attr.key !== key);
 
-    return action === "add" ? [...filteredAttributes, { key, value }] : filteredAttributes; // No addition on remove
-  };
+  async function updateOrder(
+    giftWrapOption,
+    action
+  ) {
+    try {
+      const updateOrderAttribute = {
+        note: action === "add" ? giftNote : null,
+        customAttributes: [{ key: "Gift Wrap Option", value: giftWrapOption }],
+      };
 
-  const updateCustomAttributes = (attributes = [], isSelected, wrapOption, action) => {
-    const filteredAttributes = attributes.filter((attr) => attr.key !== "Gift Wrap");
+      const updateLineItemAttribute = items
+        .filter((item) => item.selected) 
+        .map(({ variantId, wrapOption }) => ({
+          variantId, 
+          customAttributes: [{key: "Gift Wrap", value :wrapOption}]
+        }));
 
-    return isSelected && action === "add"
-      ? [...filteredAttributes, { key: "Gift Wrap", value: wrapOption }]
-      : filteredAttributes; // Preserve others even when removing gift wrap
-  };
+      await action === "add" ? updateDraftOrder(
+        draftOrderId,
+        updateLineItemAttribute,
+        updateOrderAttribute
+      ) : removeCustomAtrribute(
+        draftOrderId,
+        updateLineItemAttribute,
+        updateOrderAttribute
+      );
 
-  async function updateDraftOrder(draftOrderId, lineItems, giftWrapOption, draftOrderCustomAttributes, action) {
-    const MUTATION = `
-      mutation updateDraftOrder($input: DraftOrderInput!, $ownerId: ID!) {
-        draftOrderUpdate(input: $input, id: $ownerId) {
-          draftOrder { id }
-          userErrors { message field }
-        }
-      }
-    `;
-
-    const input = {
-      note: action === "add" ? giftNote : null,
-      customAttributes: updateDraftOrderAttributes(draftOrderCustomAttributes,"Gift Wrap Option",giftWrapOption,action),  // Pass fetched attributes here
-      lineItems: lineItems.map(({ id, quantity, variantId, selected, wrapOption, customAttributes}) => ({
-          uuid: id,
-          variantId,
-          quantity,
-          customAttributes: updateCustomAttributes(customAttributes, selected, wrapOption, action)
-        })
-      ),
-    };
-
-    await query(MUTATION, { variables: { input, ownerId: draftOrderId } });
-    await fetchDraftOrderItems();
+      await fetchDraftOrderItems();
+    } catch (error) {
+      setUpdateMessage("Draft Order couldn't be updated. Please try again.");
+    } finally {
+      setUpdateMessage(
+        "Draft Order updated successfully. Please refresh to view"
+      );
+    }
   }
 
   const itemSelection = (selectedIds) => {
     setSelectedItemIds(selectedIds);
+
+    if (selectedIds.length === 1) {
+      setGiftWrapOption("Gift Wrap Items Together");
+    }
+
     setItems((prevItems) =>
       prevItems.map((item) => ({
         ...item,
@@ -165,9 +166,26 @@ function App() {
     );
   };
 
+  const giftWrapOptionChange = (value) => {
+    setGiftWrapOption(value);
+  
+    if (value === "Gift Wrap Items Together") {
+      setGiftWrapForWrappingTogether("With Love"); // Set default wrap when switching to Together
+  
+      setItems((prevItems) =>
+        prevItems.map((item) => ({
+          ...item,
+          wrapOption: item.selected ? "With Love" : item.wrapOption, // ✅ Sync all selected items
+        }))
+      );
+    }
+  };
   const wrapSelection = (id, option) => {
     setItems((prevItems) =>
-      prevItems.map((item) => item.id === id ? { ...item, wrapOption: option } : item));
+      prevItems.map((item) =>
+        item.id === id ? { ...item, wrapOption: option } : item
+      )
+    );
   };
 
   const giftWrapForWrappingTogetherChange = (value) => {
@@ -184,12 +202,18 @@ function App() {
   };
 
   async function addGiftWrap() {
-    await updateDraftOrder(draftOrderId, items, giftWrapOption, draftOrderCustomAttributes, "add");
+    await updateOrder(
+      giftWrapOption,
+      "add"
+    );
   }
 
   async function removeGiftWrap() {
-    // setGiftNote()
-    await updateDraftOrder(draftOrderId, items, "", draftOrderCustomAttributes, "remove");
+    await updateOrder(
+      "",
+      "remove"
+    );
+    setSelectedItemIds([]);
   }
 
   return (
@@ -205,56 +229,90 @@ function App() {
           value={selectedItemIds}
           onChange={itemSelection}
         />
-        <Select
-          label="Gift wrap together?"
-          options={giftWrapOptions}
-          value={giftWrapOption}
-          onChange={setGiftWrapOption}
-        />
+        {selectedItemIds.length > 1 && (
+          <InlineStack
+            padding={"none none"}
+            blockAlignment="center"
+            inlineAlignment="space-between"
+          >
+            <BlockStack inlineSize={"40%"} blockAlignment="center">
+              <Text fontWeight="normal">Gift wrap together?</Text>
+            </BlockStack>
+
+            <BlockStack>
+              <Select
+                options={giftWrapOptions}
+                value={giftWrapOption}
+                onChange={giftWrapOptionChange}
+              />
+            </BlockStack>
+          </InlineStack>
+        )}
         {giftWrapOption === "Gift Wrap Items Together" ? (
-          <Select
-            label="Select gift wrap"
-            options={wrapperOptions}
-            value={giftWrapForWrappingTogether}
-            onChange={giftWrapForWrappingTogetherChange}
-          />
+          <InlineStack blockAlignment="center" inlineAlignment="space-between">
+            <BlockStack inlineSize={"40%"} blockAlignment="center">
+              <Text fontWeight="normal">Select gift wrap</Text>
+            </BlockStack>
+            <BlockStack>
+              <Select
+                options={wrapperOptions}
+                value={giftWrapForWrappingTogether}
+                onChange={giftWrapForWrappingTogetherChange}
+              />
+            </BlockStack>
+          </InlineStack>
         ) : (
           <BlockStack>
             <Heading size="4">Select gift wrap</Heading>
             {items.map(
               (item) =>
                 item.selected && (
-                  <BlockStack key={item.id} padding="base none">
-                    <Select
-                      label={item.name}
-                      options={wrapperOptions}
-                      value={item.wrapOption}
-                      onChange={(value) => wrapSelection(item.id, value)}
-                    />
-                  </BlockStack>
+                  <InlineStack
+                    key={item.id}
+                    blockAlignment="center"
+                    inlineAlignment="space-between"
+                  >
+                    <BlockStack blockAlignment="center">
+                      <Text fontWeight="normal">{item.name}</Text>
+                    </BlockStack>
+                    <BlockStack inlineSize={"30%"}>
+                      <Select
+                        options={wrapperOptions}
+                        value={item.wrapOption}
+                        onChange={(value) => wrapSelection(item.id, value)}
+                      />
+                    </BlockStack>
+                  </InlineStack>
                 )
             )}
           </BlockStack>
         )}
+
         <TextArea
           label="Gift Note"
           placeholder="Add an optional gift note"
           value={giftNote}
           onChange={setGiftNote}
-          rows="5"
+          rows="3"
         />
         <Text fontStyle="italic">
           Gift notes are printed in cursive font and applied to the gift
           wrapping.
         </Text>
+
         <InlineStack spacing="tight" columnGap="base" inlineAlignment="end">
           <Button variant="secondary" onPress={removeGiftWrap}>
             Remove Gift Wrap
           </Button>
-          <Button variant="primary" onPress={addGiftWrap}>
+          <Button
+            variant="primary"
+            onPress={addGiftWrap}
+            disabled={selectedItemIds.length === 0}
+          >
             Confirm Gift Wrapping
           </Button>
         </InlineStack>
+        {updateMessage && <Banner tone="info">{updateMessage}</Banner>}
       </BlockStack>
     </AdminBlock>
   );
